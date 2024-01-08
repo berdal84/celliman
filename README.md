@@ -2,8 +2,8 @@
 # Celliman is a Fiji plugin to analyse cell images written in Java
 
 The goal of Celliman is to:
-- count nucleï
-- count membranes
+- count from cytolosic staining
+- count from nuclaer staining
 - compute co-localization
 - save a report (count, and ratio in percent)
 
