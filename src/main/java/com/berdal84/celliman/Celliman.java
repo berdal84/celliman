@@ -1,12 +1,4 @@
-/*
- * To the extent possible under law, the ImageJ developers have waived
- * all copyright and related or neighboring rights to this tutorial code.
- *
- * See the CC0 1.0 Universal license for details:
- *     http://creativecommons.org/publicdomain/zero/1.0/
- */
-
-package com.mycompany.imagej;
+package com.berdal84.celliman;
 
 import net.imagej.Dataset;
 import net.imagej.ImageJ;
@@ -33,8 +25,8 @@ import java.util.List;
  * and replace the {@link run} method implementation with your own logic.
  * </p>
  */
-@Plugin(type = Command.class, menuPath = "Plugins>Gauss Filtering")
-public class GaussFiltering<T extends RealType<T>> implements Command {
+@Plugin(type = Command.class, menuPath = "Plugins>Celliman")
+public class Celliman<T extends RealType<T>> implements Command {
     //
     // Feel free to add more parameters here...
     //
@@ -94,7 +86,7 @@ public class GaussFiltering<T extends RealType<T>> implements Command {
             ij.ui().show(dataset);
 
             // invoke the plugin
-            ij.command().run(GaussFiltering.class, true);
+            ij.command().run(Celliman.class, true);
         }
     }
 
