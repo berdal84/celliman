@@ -80,7 +80,7 @@
 
 	<properties>
 		<package-name>com.berdal84.celliman</package-name>
-		<main-class>com.berdal84.celliman.Celliman</main-class>
+		<main-class>com.berdal84.celliman.CellimanCommand</main-class>
 		<license.licenseName>MIT</license.licenseName>
 		<license.copyrightOwners>Bérenger Dalle-Cort</license.copyrightOwners>
 	</properties>
@@ -91,6 +91,18 @@
 			<url>https://maven.scijava.org/content/groups/public</url>
 		</repository>
 	</repositories>
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<source>16</source>
+					<target>16</target>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
 
 	<dependencies>
 		<dependency>
