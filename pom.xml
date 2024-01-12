@@ -80,7 +80,7 @@
 
 	<properties>
 		<package-name>com.berdal84.celliman</package-name>
-		<main-class>com.berdal84.celliman.CellimanCommand</main-class>
+		<main-class>com.berdal84.celliman.Celliman</main-class>
 		<license.licenseName>MIT</license.licenseName>
 		<license.copyrightOwners>Bérenger Dalle-Cort</license.copyrightOwners>
 	</properties>
