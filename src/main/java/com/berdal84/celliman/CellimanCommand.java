@@ -2,18 +2,17 @@ package com.berdal84.celliman;
 
 import java.io.File;
 
-import ij.ImagePlus;
-import ij.WindowManager;
-import net.imagej.Dataset;
-import net.imagej.ImageJ;
-import net.imagej.ImgPlus;
+import net.imagej.*;
 import net.imagej.display.WindowService;
 import net.imagej.lut.LUTService;
 import net.imagej.ops.Initializable;
 import net.imagej.ops.Op;
 import net.imagej.ops.OpService;
+import net.imglib2.IterableInterval;
 import net.imglib2.type.numeric.RealType;
 
+import net.imglib2.type.numeric.real.DoubleType;
+import org.jetbrains.annotations.NotNull;
 import org.scijava.command.*;
 import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
@@ -33,7 +32,10 @@ import static org.scijava.ui.DialogPrompt.Result.YES_OPTION;
 public class CellimanCommand<T extends RealType<T>> extends DynamicCommand implements Initializable {
 
     @Parameter
-    private Dataset dataset;
+    private Dataset input;
+
+    @Parameter
+    private DatasetService datasetService;
 
     @Parameter
     private UIService ui;
@@ -46,6 +48,9 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
 
     @Parameter
     private WindowService window;
+
+    @Parameter
+    private ImgPlusService ijpservice;
 
     @Parameter
     private CommandService command;
@@ -72,7 +77,7 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
     private String method;
 
     // output preview
-    private ImgPlus<?> preview;
+    private Dataset preview;
 
     // -- Callback methods --
 
@@ -89,7 +94,7 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
     @Override
     public void initialize() {
         ui.showDialog("Celliman will start");
-        if (dataset != null) {
+        if (input != null) {
             getInfo();
             DialogPrompt.Result result = ui.showDialog(
                     "Do you want Celliman to try to deduce parameters from dataset?",
@@ -97,7 +102,7 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
                     YES_NO_OPTION
             );
             if( result == YES_OPTION) {
-                deduceParameters(dataset);
+                deduceParameters(input);
             }
         } else {
             logger.warn("No dataset, skip end of initialize()");
@@ -105,8 +110,9 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
         ui.showDialog("Celliman is ready");
     }
 
-    private void deduceParameters(final Dataset _dataset) {
-        final String name = _dataset.getImgPlus().getName();
+    private void deduceParameters(final Dataset dataset) {
+        logger.debug("Deducing parameters from dataset ...");
+        final String name = dataset.getImgPlus().getName();
         final String[] tokens = name.toLowerCase().split(" ");
 
         // Deduce staining
@@ -127,33 +133,52 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
 
     @Override
     public void preview() {
-        final ImgPlus<?> image = dataset.getImgPlus();
+        final ImgPlus<? extends RealType<?>> inputImgPlus = input.getImgPlus();
 
-        if ( this.preview != null ) {
-            window.remove(this.preview.getName());
+        logger.debug("Check if preview exists ...");
+        if ( this.preview == null )
+        {
+            logger.debug("Duplicating input ...");
+            this.preview = input.duplicate();
+
+            // Update name
+            final String name = String.format("%s (PREVIEW)", input.getName() );
+            this.preview.setName(name);
+
+            ui.show(this.preview);
+        } else {
+            logger.debug("Already exists");
         }
 
-        this.preview = image.copy();
-
         // Apply a Z-Projection with a Max Intensity mode
-        final long depth = dataset.getDepth();
+        logger.debug("Handle depth ...");
+        final long depth = input.getDepth();
         if ( depth > 1 )
         {
-            ui.showDialog("Z-Project for " + depth + " slices");
-            Op maxOp = op.op("stats.max", image);
-            op.run("project", this.preview, image, maxOp, 2);
+            logger.debug("Z-Project for " + depth + " slices");
+            Op maxOp = op.op("stats.max", inputImgPlus);
+            op.run("project", this.preview, inputImgPlus, maxOp, 2);
         }
         else
         {
-            ui.showDialog("No need to Z-Project, file has a single depth");
+            logger.debug("No need to Z-Project, file has a single depth");
         }
 
-        // Update name
-        final String name = String.format("%s (PREVIEW)", dataset.getName() );
-        this.preview.setName(name);
+        logger.debug("Create a blank image at the same same as image");
+        final IterableInterval<DoubleType> blank = op.create().img(preview.getImgPlus());
 
-        // Make sure preview is visible
-        ui.show(this.preview);
+        logger.debug("Fill in an image with a formula");
+
+        try {
+            String formula = getFormula();
+            final IterableInterval<DoubleType> sinusoid = op.image().equation(blank, formula);
+
+            // Show the result
+            logger.debug("Show the result");
+            ui.show(sinusoid);
+        } catch (Exception e) {
+            ui.showDialog("Unable to run the operation " + e.toString());
+        }
 
         /*
 
@@ -182,13 +207,31 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
          */
     }
 
+    @NotNull
+    private String getFormula() {
+        String formula;
+        switch (staining) {
+            case "Nuclear":
+                formula = "10 * (Math.cos(0.3*p[0]) + Math.sin(0.3*p[1]))";
+                break;
+            default:
+                formula = "20 * (Math.cos(0.3*p[0]) + Math.sin(0.3*p[1]))";
+                break;
+        }
+        return formula;
+    }
+
     public static void main(final String... args) throws Exception {
         // create the ImageJ application context with all available services
         final ImageJ ij = new ImageJ();
         ij.ui().showUI();
 
-        // ask the user for a file to open
-        final File file = ij.ui().chooseFile(null, "open");
+        File file = new File("/home/berenger/Bureau/06-23-23 RCC_D5Z P4 RIV31 D203 DAPI AP2a 488 SOX9 555 TileScan 1_s07_z3_ch00.tif");
+
+        if( !file.exists() ) {
+            // ask the user for a file to open
+            file = ij.ui().chooseFile(null, "open");
+        }
 
         if (file != null) {
             // load the dataset
