@@ -33,7 +33,7 @@ Clone (or download) this repository and run the build script.
 ```
 clone https://github.com/berdal84/celliman
 cd celliman
-mvn install
+mvn clean install
 ```
 
 The built command should be present in the `./target/` folder.

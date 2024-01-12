@@ -34,8 +34,8 @@ import io.scif.services.DatasetIOService;
  * </p>
  */
 @Plugin(
-    type = Command.class,
-    menuPath = "Plugins>Celliman"
+    type = DynamicCommand.class,
+    menuPath = "Plugins>Celliman>Run"
 )
 public class CellimanCommand<T extends RealType<T>> extends DynamicCommand implements Initializable {
 
