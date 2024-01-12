@@ -3,44 +3,34 @@ package com.berdal84.celliman;
 import java.io.File;
 
 import ij.ImagePlus;
+import ij.WindowManager;
 import net.imagej.Dataset;
 import net.imagej.ImageJ;
 import net.imagej.ImgPlus;
+import net.imagej.display.WindowService;
 import net.imagej.lut.LUTService;
+import net.imagej.ops.Initializable;
+import net.imagej.ops.Op;
 import net.imagej.ops.OpService;
-import net.imglib2.img.Img;
 import net.imglib2.type.numeric.RealType;
 
-import org.scijava.Initializable;
-import org.scijava.command.Command;
-import org.scijava.command.CommandService;
-import org.scijava.command.DynamicCommand;
+import org.scijava.command.*;
 import org.scijava.log.LogService;
 import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
+import org.scijava.ui.DialogPrompt;
 import org.scijava.ui.UIService;
 import org.scijava.widget.ChoiceWidget;
-import ij.plugin.ZProjector;
-import io.scif.services.DatasetIOService;
 
-/**
- * This example illustrates how to create an ImageJ {@link org.scijava.command.Command} plugin.
- * <p>
- * The code here is a simple Gaussian blur using ImageJ Ops.
- * </p>
- * <p>
- * You should replace the parameter fields with your own inputs and outputs,
- * and replace the {@link run} method implementation with your own logic.
- * </p>
- */
+import static org.scijava.ui.DialogPrompt.MessageType.QUESTION_MESSAGE;
+import static org.scijava.ui.DialogPrompt.OptionType.YES_NO_OPTION;
+import static org.scijava.ui.DialogPrompt.Result.YES_OPTION;
+
 @Plugin(
     type = DynamicCommand.class,
-    menuPath = "Plugins>Celliman>Run"
+    menuPath = "Plugins>Celliman>Run for current Dataset"
 )
 public class CellimanCommand<T extends RealType<T>> extends DynamicCommand implements Initializable {
-
-    @Parameter
-    private Number tutu;
 
     @Parameter
     private Dataset dataset;
@@ -55,6 +45,9 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
     private LogService logger;
 
     @Parameter
+    private WindowService window;
+
+    @Parameter
     private CommandService command;
 
     @Parameter
@@ -67,7 +60,7 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
         style       = ChoiceWidget.LIST_BOX_STYLE,
         callback    = "stainingChanged"
     )
-    private String staining = "Nuclear";
+    private String staining;
 
     @Parameter(
         label       = "Segmentation Method",
@@ -76,40 +69,44 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
         style       = ChoiceWidget.LIST_BOX_STYLE,
         callback    = "methodChanged"
     )
-    private String method = "Ilastic";
+    private String method;
 
     // output preview
-    private ImagePlus preview;
+    private ImgPlus<?> preview;
 
     // -- Callback methods --
 
     private void stainingChanged() {
         logger.debug("staining changed: " + staining);
-        this.updatePreview();
     }
 
     private void methodChanged() {
         logger.debug("method changed: " + method);
-        this.updatePreview();
     }
 
     // -- Initializable methods --
 
     @Override
     public void initialize() {
-        getInfo();
-        deduceParametersFromImageName();
-        updatePreview();
+        ui.showDialog("Celliman will start");
+        if (dataset != null) {
+            getInfo();
+            DialogPrompt.Result result = ui.showDialog(
+                    "Do you want Celliman to try to deduce parameters from dataset?",
+                    QUESTION_MESSAGE,
+                    YES_NO_OPTION
+            );
+            if( result == YES_OPTION) {
+                deduceParameters(dataset);
+            }
+        } else {
+            logger.warn("No dataset, skip end of initialize()");
+        }
+        ui.showDialog("Celliman is ready");
     }
 
-    @Override
-    public void run() {
-        updatePreview();
-        ui.showDialog("Celliman will close");
-    }
-
-    private void deduceParametersFromImageName() {
-        final String name = dataset.getImgPlus().getName();
+    private void deduceParameters(final Dataset _dataset) {
+        final String name = _dataset.getImgPlus().getName();
         final String[] tokens = name.toLowerCase().split(" ");
 
         // Deduce staining
@@ -117,38 +114,43 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
             switch (each) {
 
                 case "dapi":
-                    staining = "Nuclear";
+                    setInput("staining", "Nuclear");
                     break;
 
                 case "rho":
-                    staining = "Cytolosic";
+                    setInput("staining", "Cytolosic");
                     break;
 
             }
         }
     }
 
-    private void updatePreview() {
+    @Override
+    public void preview() {
+        final ImgPlus<?> image = dataset.getImgPlus();
+
+        if ( this.preview != null ) {
+            window.remove(this.preview.getName());
+        }
+
+        this.preview = image.copy();
 
         // Apply a Z-Projection with a Max Intensity mode
         final long depth = dataset.getDepth();
         if ( depth > 1 )
         {
             ui.showDialog("Z-Project for " + depth + " slices");
-            ZProjector projector = new ZProjector();
-            projector.setImage((ImagePlus)dataset.getImgPlus().getImg());
-            final String method = ZProjector.METHODS[ZProjector.MAX_METHOD];
-            projector.run(method);
-            this.preview = projector.getProjection();
+            Op maxOp = op.op("stats.max", image);
+            op.run("project", this.preview, image, maxOp, 2);
         }
-        else if (this.preview == null)
+        else
         {
             ui.showDialog("No need to Z-Project, file has a single depth");
-            this.preview = (ImagePlus)dataset.getImgPlus().getImg().copy();
         }
 
         // Update name
         final String name = String.format("%s (PREVIEW)", dataset.getName() );
+        this.preview.setName(name);
 
         // Make sure preview is visible
         ui.show(this.preview);
@@ -190,13 +192,13 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
 
         if (file != null) {
             // load the dataset
-            final ImagePlus[] img = Utilities.open(file.getPath());
+            final Dataset dataset = ij.scifio().datasetIO().open(file.getPath());
 
             // show the image
-            ij.ui().show(img);
+            ij.ui().show(dataset);
 
             // invoke the plugin
-            ij.command().run(CellimanCommand.class, true, "tutu", 42);
+            ij.command().run(CellimanCommand.class, true);
         }
     }
 }
