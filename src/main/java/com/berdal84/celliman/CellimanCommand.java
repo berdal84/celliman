@@ -2,10 +2,13 @@ package com.berdal84.celliman;
 
 import java.io.File;
 
+import ij.ImagePlus;
 import net.imagej.Dataset;
 import net.imagej.ImageJ;
 import net.imagej.ImgPlus;
+import net.imagej.lut.LUTService;
 import net.imagej.ops.OpService;
+import net.imglib2.img.Img;
 import net.imglib2.type.numeric.RealType;
 
 import org.scijava.Initializable;
@@ -17,6 +20,8 @@ import org.scijava.plugin.Parameter;
 import org.scijava.plugin.Plugin;
 import org.scijava.ui.UIService;
 import org.scijava.widget.ChoiceWidget;
+import ij.plugin.ZProjector;
+import io.scif.services.DatasetIOService;
 
 /**
  * This example illustrates how to create an ImageJ {@link org.scijava.command.Command} plugin.
@@ -35,6 +40,9 @@ import org.scijava.widget.ChoiceWidget;
 public class CellimanCommand<T extends RealType<T>> extends DynamicCommand implements Initializable {
 
     @Parameter
+    private Number tutu;
+
+    @Parameter
     private Dataset dataset;
 
     @Parameter
@@ -48,6 +56,9 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
 
     @Parameter
     private CommandService command;
+
+    @Parameter
+    private LUTService lut;
 
     @Parameter(
         label       = "Which staining is it?",
@@ -68,7 +79,7 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
     private String method = "Ilastic";
 
     // output preview
-    private ImgPlus<?> preview;
+    private ImagePlus preview;
 
     // -- Callback methods --
 
@@ -87,35 +98,86 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
     @Override
     public void initialize() {
         getInfo();
+        deduceParametersFromImageName();
         updatePreview();
     }
 
     @Override
     public void run() {
         updatePreview();
-        ui.showDialog("Celliman is Happy");
+        ui.showDialog("Celliman will close");
     }
 
-    public void updatePreview() {
-        final ImgPlus<?> image = dataset.getImgPlus();
+    private void deduceParametersFromImageName() {
+        final String name = dataset.getImgPlus().getName();
+        final String[] tokens = name.toLowerCase().split(" ");
 
-        // Make a temporary copy to store a preview
-        if (this.preview == null) {
-            this.preview = image.copy();
-            this.preview.setName("Celliman PREVIEW");
-            // Make sure preview is visible
-            ui.show(this.preview);
+        // Deduce staining
+        for (String each : tokens) {
+            switch (each) {
+
+                case "dapi":
+                    staining = "Nuclear";
+                    break;
+
+                case "rho":
+                    staining = "Cytolosic";
+                    break;
+
+            }
+        }
+    }
+
+    private void updatePreview() {
+
+        // Apply a Z-Projection with a Max Intensity mode
+        final long depth = dataset.getDepth();
+        if ( depth > 1 )
+        {
+            ui.showDialog("Z-Project for " + depth + " slices");
+            ZProjector projector = new ZProjector();
+            projector.setImage((ImagePlus)dataset.getImgPlus().getImg());
+            final String method = ZProjector.METHODS[ZProjector.MAX_METHOD];
+            projector.run(method);
+            this.preview = projector.getProjection();
+        }
+        else if (this.preview == null)
+        {
+            ui.showDialog("No need to Z-Project, file has a single depth");
+            this.preview = (ImagePlus)dataset.getImgPlus().getImg().copy();
         }
 
-        // Temporarily show a dialog
-        switch (staining) {
-            case "Nuclear":
-                ui.showDialog("You choose Nuclear");
-                break;
-            case "Cytosolic":
-                ui.showDialog("You choose Cytosolic");
-        }
+        // Update name
+        final String name = String.format("%s (PREVIEW)", dataset.getName() );
 
+        // Make sure preview is visible
+        ui.show(this.preview);
+
+        /*
+
+        auto record macro (just for hints)
+
+        imp = ZProjector.run(imp,"max");
+        IJ.run(imp, "Window/Level...", "");
+        IJ.run(imp, "Enhance Contrast", "saturated=0.35");
+        IJ.run(imp, "Apply LUT", "");
+        IJ.run(imp, "Trainable Weka Segmentation", "");
+        call("trainableSegmentation.Weka_Segmentation.loadClassifier", "....../Weka Classifier.model");
+        call("trainableSegmentation.Weka_Segmentation.getResult");
+        IJ.run("Close");
+        imp.close();
+        imp.close();
+        imp.close();
+        IJ.run(imp, "Window/Level...", "");
+        IJ.run(imp, "Enhance Contrast", "saturated=0.35");
+        IJ.run(imp, "Apply LUT", "stack");
+        imp = ZProjector.run(imp,"avg");
+        IJ.run("Window/Level...", "");
+        IJ.run(imp, "Enhance Contrast", "saturated=0.35");
+        IJ.run("Close");
+        imp.close();
+        imp.close();
+         */
     }
 
     public static void main(final String... args) throws Exception {
@@ -128,13 +190,13 @@ public class CellimanCommand<T extends RealType<T>> extends DynamicCommand imple
 
         if (file != null) {
             // load the dataset
-            final Dataset dataset = ij.scifio().datasetIO().open(file.getPath());
+            final ImagePlus[] img = Utilities.open(file.getPath());
 
             // show the image
-            ij.ui().show(dataset);
+            ij.ui().show(img);
 
             // invoke the plugin
-            ij.command().run(CellimanCommand.class, true, "tutu=42");
+            ij.command().run(CellimanCommand.class, true, "tutu", 42);
         }
     }
 }
